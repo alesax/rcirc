@@ -114,15 +114,23 @@ typedef struct t_sess {
 		t_rc_message *messages;
 		t_rc_sndmsg *sent;
 	} rc;
+
+	struct t_sess *next;
 } t_sess;
 
 struct lws_pollfd pollfds[MAXFD];
 struct t_sess *sessions[MAXFD];
 int maxfds = 0;
 const char *selfident = "myserver";
+static struct t_sess *session_list = NULL;
 
 void poll_removefd(int i)
 {
+	for (t_sess *s = session_list; s; s = s->next) {
+		if (s->rc_poll >= &pollfds[i]) s->rc_poll--;
+		if (s->poll >= &pollfds[i]) s->poll--;
+	}
+
 	memcpy(&pollfds[i], &pollfds[i + 1],
 	       sizeof(struct lws_pollfd) * (maxfds - i));
 	memcpy(&sessions[i], &sessions[i + 1], sizeof(t_sess *) * (maxfds - i));
@@ -255,7 +263,7 @@ int sess__rc_work(t_sess * s, const char *in)
 		const char *id = json_object_get_string(jo);
 		t_rc_command *cb = sess__rc_command_by_id(s, id);
 		if (cb) {
-			logg(ERR, "I've GOT REPLY %s!\n", id);
+			logg(DBG1, "I've GOT REPLY %s!\n", id);
 
 			if (cb->fce)
 				r = cb->fce(s, cb->data, jobj);
@@ -464,10 +472,9 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_CLIENT_WRITEABLE:
-		logg(ERR, "LWS_CALLBACK_CLIENT_WRITEABLE\n");
+		logg(DBG4, "LWS_CALLBACK_CLIENT_WRITEABLE\n");
 		t_buff *b = s->rc.out_buff;
 		if (!b) {
-			logg(ERR, "FD %d <- POLLIN (%d)\n", s->rc_poll->fd, s->rc_poll->revents);
 			s->rc_poll->events = POLLIN;
 			goto skip;
 		}
@@ -507,17 +514,16 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_USER:
-		lwsl_notice("%s: LWS_CALLBACK_USER\n", __func__);
+		logg(DBG4, "%s: LWS_CALLBACK_USER\n", __func__);
 		lws_timed_callback_vh_protocol(s->rc.vhost,
 					       s->rc.protocol,
 					       LWS_CALLBACK_USER, 1);
 		break;
 
 	case LWS_CALLBACK_CLIENT_RECEIVE:
-		logg(DBG1, "RX: %s\n", (const char *)in);
+		logg(DBG4, "RC-RX: %s\n", (const char *)in);
 
 		sess__rc_work(s, in);
-		logg(ERR, "RX: %s\n", (const char *)in);
 		break;
 
 	default:
@@ -648,6 +654,9 @@ t_sess *sess_new()
 	s->irc_buff_head = 0;
 	s->irc_out_buff_tail = &s->irc_out_buff;
 	s->rc.out_buff_tail = &s->rc.out_buff;
+
+	s->next = session_list;
+	session_list = s;
 
 	return (s);
 }
@@ -1146,8 +1155,39 @@ int sess__rc_send_message(t_sess * s, char t, const char *name, const char *msg)
 	return 0;
 }
 
+int sess__free(t_sess * s)
+{
+	t_sess **d;
+	for (d = &session_list; *d && *d != s; d = &(*d)->next);
+
+	*d = s->next;
+
+	free(s);
+}
+
 int sess__close(t_sess * s)
 {
+	shutdown(s->poll->fd, SHUT_RDWR);
+	close(s->poll->fd);
+	s->rc.finished = 1;
+	if (s->rc_poll) {
+		shutdown(s->rc_poll->fd, SHUT_RDWR);
+		close(s->rc_poll->fd);
+		lws_service_fd(s->rc.context, s->rc_poll);
+	}
+	for (int i = 0; i <= maxfds; i++) {
+		if (&pollfds[i] == s->poll) {
+			poll_removefd(i);
+			break;
+		}
+	}
+	for (int i = 0; i <= maxfds; i++) {
+		if (&pollfds[i] == s->rc_poll) {
+			poll_removefd(i);
+			break;
+		}
+	}
+
 	return 0;
 }
 
@@ -1302,46 +1342,50 @@ int main(int argc, const char **argv)
 	while (n >= 0 && !interrupted) {
 		int ret;
 
-		logg(DBG1, "poll %d\n", maxfds);
-
 		ret = poll(pollfds, maxfds, 10000);
+
+		if (ret > 0 && pollfds[0].revents == POLLIN) {
+			/* new connection on the IRC port */
+			struct sockaddr_in cl_addr;
+			socklen_t cl_len;
+
+			int newfd =
+			    accept(pollfds[0].fd,
+				   (struct sockaddr *)&cl_addr,
+				   (socklen_t *) & cl_len);
+
+			logg(DBG1, "spawning new fd %d\n", newfd);
+
+			pollfds[maxfds].fd = newfd;
+			pollfds[maxfds].events = POLLIN | POLLNVAL;
+			pollfds[maxfds].revents = 0;
+
+			t_sess *sess = sess_new();
+			sess->poll = &pollfds[maxfds];
+			sess->irc_fd = newfd;
+
+			sessions[maxfds] = sess;
+
+			maxfds++;
+
+			ret--;
+		}
+
 
 		for (int i = 0; i < maxfds && ret > 0; i++) {
 			if (pollfds[i].revents == 0)
 				continue;
 			ret--;
 
-			if (i == 0 && pollfds[i].revents == POLLIN) {
-				/* new connection on the IRC port */
-				struct sockaddr_in cl_addr;
-				socklen_t cl_len;
-
-				int newfd =
-				    accept(pollfds[i].fd,
-					   (struct sockaddr *)&cl_addr,
-					   (socklen_t *) & cl_len);
-
-				logg(DBG1, "spawning new fd %d\n", newfd);
-
-				pollfds[maxfds].fd = newfd;
-				pollfds[maxfds].events = POLLIN | POLLNVAL;
-				pollfds[maxfds].revents = 0;
-
-				t_sess *sess = sess_new();
-				sess->poll = &pollfds[maxfds];
-				sess->irc_fd = newfd;
-
-				sessions[maxfds] = sess;
-
-				maxfds++;
-
+			if (sessions[i] && pollfds[i].revents & POLLNVAL) {
+				sess__close(sessions[i]);
 				continue;
 			}
 
 			if (sessions[i] && sessions[i]->irc_fd == pollfds[i].fd) {
-				logg(DBG1, "gotcha %d\n", pollfds[i].revents);
+				logg(DBG4, "gotcha [%d] %d -> %d\n", pollfds[i].fd, pollfds[i].events, pollfds[i].revents);
 				t_sess *s = sessions[i];
-				if (pollfds[i].revents & POLLIN) {
+				if (pollfds[i].revents & (POLLIN | POLLNVAL)) {
 					/* IRC RX */
 					int r =
 					    recv(pollfds[i].fd,
@@ -1351,10 +1395,11 @@ int main(int argc, const char **argv)
 						 (char *)(unsigned long long)s->
 						 irc_buff_head, 0);
 
-					logg(DBG1, "RECV=%.*s\n", r,
+					logg(DBG1, "IRC-RX: %.*s\n", r,
 					     s->irc_buff + s->irc_buff_head);
 
 					if (r == 0) {
+						logg(DBG1,"Going to close %d+%d\n", pollfds[i].fd, pollfds[s->rc.fd_idx].fd);
 						shutdown(pollfds[i].fd,
 							 SHUT_RDWR);
 						close(pollfds[i].fd);
@@ -1364,8 +1409,7 @@ int main(int argc, const char **argv)
 								       s->
 								       rc_poll);
 						sess__close(s);
-						poll_removefd(i);
-						poll_removefd(s->rc.fd_idx);
+						sess__free(s);
 						continue;
 
 					} else if (r == -1) {
@@ -1393,7 +1437,7 @@ int main(int argc, const char **argv)
 							exit(1);
 
 						}
-						logg(DBG2, "IRC sent: %.*s\n",
+						logg(DBG2, "IRC-TX: %.*s\n",
 						     r, s->irc_out_buff->start);
 
 						s->irc_out_buff->start += r;
@@ -1417,6 +1461,7 @@ int main(int argc, const char **argv)
 					logg(DBG1,"TODO:\n");
 				}
 			} else {
+				logg(DBG4, "gotcha-2 [%d] %d -> %d\n", pollfds[i].fd, pollfds[i].events, pollfds[i].revents);
 				int ret = lws_service_fd(context, &pollfds[i]);
 				if (ret) {
 					logg(ERR,"lws_service_fd(%d)... %d:\n",  pollfds[i].fd, ret);

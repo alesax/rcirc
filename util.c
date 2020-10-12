@@ -28,4 +28,5 @@ void logg(short lvl, const char *fmt, ...)
 		tm->tm_min, tm->tm_sec);
 	vfprintf(logout, fmt, args);
 	va_end(args);
+	fflush(logout);
 }
