@@ -446,14 +446,13 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 	if (s->rc.finished)
 		return (-1);
 
-	logg(ERR, "VHD=%p WS=%p UD=%p\n", NULL, wsi,
-	     lws_get_opaque_user_data(wsi));
 	switch (reason) {
 
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		logg(ERR, "CLIENT_CONNECTION_ERROR: %s\n",
 		     in ? (char *)in : "(null)");
 		s->rc.client_wsi = NULL;
+		s->rc.finished = 1;
 		lws_timed_callback_vh_protocol(s->rc.vhost,
 					       s->rc.protocol,
 					       LWS_CALLBACK_USER, 1);
@@ -467,10 +466,13 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 	case LWS_CALLBACK_CLIENT_WRITEABLE:
 		logg(ERR, "LWS_CALLBACK_CLIENT_WRITEABLE\n");
 		t_buff *b = s->rc.out_buff;
-		if (!b)
+		if (!b) {
+			logg(ERR, "FD %d <- POLLIN (%d)\n", s->rc_poll->fd, s->rc_poll->revents);
+			s->rc_poll->events = POLLIN;
 			goto skip;
+		}
 
-		logg(ERR, "TX: %.*s\n", b->left,
+		logg(ERR, "RC-TX: %.*s\n", b->left,
 		     (const char *)b->buff + LWS_PRE);
 		m = lws_write(wsi, ((unsigned char *)b->buff) + LWS_PRE,
 			      b->left, LWS_WRITE_TEXT);
@@ -487,13 +489,14 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		}
 		s->rc.out_buff = b->next;
 		buff__free(b);
-
  skip:
 		break;
 
 	case LWS_CALLBACK_CLIENT_CLOSED:
+		logg(ERR, "%s: LWS_CALLBACK_CLIENT_CLOSED\n", __func__);
 		s->rc.client_wsi = NULL;
 		s->rc.established = 0;
+		s->rc.finished = 1;
 		lws_timed_callback_vh_protocol(s->rc.vhost, s->rc.protocol,
 					       LWS_CALLBACK_USER, 1);
 		break;
@@ -845,7 +848,7 @@ int sess__cb_rc_getsubscriptions(t_sess * s, void *data, json_object * j)
 	}
 
 	for (t_rc_room * r = s->rc.rooms; r; r = r->next) {
-		if (r->t == 'c')
+		if (r->t == 'c' || r->t == 'p')
 			sess__rc_join_room(s, r->t, r->name);
 	}
 
@@ -890,6 +893,10 @@ int sess__rc_json_send_(t_sess * s, json_object * json)
 
 int sess__rc_start(t_sess * s, struct lws_context *ctx)
 {
+	if (s->rc_poll) {
+		logg(ERR, "RC session already started");
+		return 2;
+	}
 	s->rc.context = ctx;
 	s->rc.i.context = ctx;
 	s->rc.i.port = 443;
@@ -1211,7 +1218,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 
 	} else if (!strcmp(command, "PING")) {
 		sess__add_irc_out(s, buff__sprintf("PONG %s\r\n", c));
-	} else if (!strcmp(command, "PASS")) {
+	} else if (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
 		IFFREE(s->rc.token);
 		s->rc.token = strdup(c);
 		sess__rc_start(s, ctx);
@@ -1314,6 +1321,8 @@ int main(int argc, const char **argv)
 					   (struct sockaddr *)&cl_addr,
 					   (socklen_t *) & cl_len);
 
+				logg(DBG1, "spawning new fd %d\n", newfd);
+
 				pollfds[maxfds].fd = newfd;
 				pollfds[maxfds].events = POLLIN | POLLNVAL;
 				pollfds[maxfds].revents = 0;
@@ -1321,7 +1330,6 @@ int main(int argc, const char **argv)
 				t_sess *sess = sess_new();
 				sess->poll = &pollfds[maxfds];
 				sess->irc_fd = newfd;
-				logg(DBG1, "hi %d\n", newfd);
 
 				sessions[maxfds] = sess;
 
@@ -1406,9 +1414,13 @@ int main(int argc, const char **argv)
 					}
 
 				} else {
+					logg(DBG1,"TODO:\n");
 				}
 			} else {
-				lws_service_fd(context, &pollfds[i]);
+				int ret = lws_service_fd(context, &pollfds[i]);
+				if (ret) {
+					logg(ERR,"lws_service_fd(%d)... %d:\n",  pollfds[i].fd, ret);
+				}
 			}
 			pollfds[i].revents = 0;
 
