@@ -3,7 +3,7 @@
 #include <time.h>
 #include "util.h"
 
-static int log_mask = ERR | DBG1 | DBG2 | DBG3;
+static int log_mask = ERR | DBG1 | DBG2 | DBG3 | DBG4;
 FILE *logout = NULL;
 
 void logg(short lvl, const char *fmt, ...)
@@ -29,4 +29,9 @@ void logg(short lvl, const char *fmt, ...)
 	vfprintf(logout, fmt, args);
 	va_end(args);
 	fflush(logout);
+}
+
+void logg_setmask(int mask)
+{
+	log_mask = mask;
 }

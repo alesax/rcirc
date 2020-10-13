@@ -8,4 +8,5 @@
 #define DBG4 (1<<4)
 
 void logg(short lvl, const char *fmt, ...);
+void logg_setmask(int mask);
 #endif

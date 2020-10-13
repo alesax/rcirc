@@ -479,7 +479,7 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 			goto skip;
 		}
 
-		logg(ERR, "RC-TX: %.*s\n", b->left,
+		logg(DBG4, "RC-TX: %.*s\n", b->left,
 		     (const char *)b->buff + LWS_PRE);
 		m = lws_write(wsi, ((unsigned char *)b->buff) + LWS_PRE,
 			      b->left, LWS_WRITE_TEXT);
@@ -1266,7 +1266,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	} else if (!strcmp(command, "PRIVMSG")) {
 		char *msg = strchr(c, ' ');
 		char t;
-		logg(ERR, "PRIVMSG->msg = %p,c = %s\n", msg, c);
+		logg(DBG3, "PRIVMSG->msg = %p,c = %s\n", msg, c);
 		if (!msg)
 			goto error_parsing;
 		*(msg++) = '\0';
@@ -1396,7 +1396,7 @@ int main(int argc, const char **argv)
 						 (char *)(unsigned long long)s->
 						 irc_buff_head, 0);
 
-					logg(DBG1, "IRC-RX: %.*s\n", r,
+					logg(DBG4, "IRC-RX: %.*s\n", r,
 					     s->irc_buff + s->irc_buff_head);
 
 					if (r == 0) {
@@ -1438,7 +1438,7 @@ int main(int argc, const char **argv)
 							exit(1);
 
 						}
-						logg(DBG2, "IRC-TX: %.*s\n",
+						logg(DBG4, "IRC-TX: %.*s\n",
 						     r, s->irc_out_buff->start);
 
 						s->irc_out_buff->start += r;
