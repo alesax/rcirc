@@ -1250,12 +1250,14 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 		if (!s->irc.nick || !strcmp(s->irc.nick, c)) {
 			sess__add_irc_out(s,
 					  buff__sprintf
-					  (":%s 001 %s :Welcome to the Internet Relay Network _you_\r\n",
-					   selfident, c));
+					  (":%s 001 %s :Welcome to the Internet Relay Network %s\r\n",
+					   selfident, c, c));
 			IFFREE(s->irc.nick);
 			s->irc.nick = strdup(c);
 		}
 
+	} else if (!strcmp(command, "USER")) {
+		/* TODO */
 	} else if (!strcmp(command, "PING")) {
 		sess__add_irc_out(s, buff__sprintf("PONG %s\r\n", c));
 	} else if (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
@@ -1281,6 +1283,8 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 			sess__rc_join_room(s, t, c);
 			sess__rc_queue_message(s, t, c, msg);
 		}
+	} else if (!strcmp(command, "WHO")) {
+		/* TODO */
 	} else if (!strcmp(command, "JOIN")) {
 		sess__rc_join_room(s, 'c', c);
 	} else if (!strcmp(command, "QUERY")) {
