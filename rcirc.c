@@ -1260,6 +1260,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 		sess__add_irc_out(s, buff__sprintf("PONG %s\r\n", c));
 	} else if (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
 		IFFREE(s->rc.token);
+		if (*c == ':') c++;
 		s->rc.token = strdup(c);
 		sess__rc_start(s, ctx);
 	} else if (!strcmp(command, "PRIVMSG")) {
