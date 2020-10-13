@@ -552,6 +552,7 @@ static void sigint_handler(int sig)
 
 struct lws_pollfd irc_mainport_pollfd;
 int irc_mainport = 6666;
+int rc_port = 443;
 
 int irc_mainport_bind()
 {
@@ -908,7 +909,7 @@ int sess__rc_start(t_sess * s, struct lws_context *ctx)
 	}
 	s->rc.context = ctx;
 	s->rc.i.context = ctx;
-	s->rc.i.port = 443;
+	s->rc.i.port = rc_port;
 	s->rc.i.address = server_name;
 	s->rc.i.path = "/websocket";
 	s->rc.i.host = s->rc.i.address;
@@ -1162,7 +1163,10 @@ int sess__free(t_sess * s)
 
 	*d = s->next;
 
+	/* TODO: add pretty much all freeing !!! */
 	free(s);
+
+	return 0;
 }
 
 int sess__close(t_sess * s)
@@ -1300,25 +1304,58 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 
 	return 0;
 }
+static const char *doc_usage = 
+	"Usage: %s [options] <RC server hostname>\n"
+	"Options:\n"
+	"\t-h\tshows this help\n"
+	"\t-d\tincreases logging verbosity, can be used repeatedly\n"
+	"\t-l\tIRC listen port (%d)\n"
+	"\t-p\tRC server port (%d)\n\n";
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
 	struct lws_context_creation_info info;
 	struct lws_context *context;
-	const char *p;
+	int showhelp = 0;
+	int logmask = 1, c;
 
 	int n = 0, logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 
-	if (argc != 2) {
-		logg(ERR, "Give me one argument: <server name>\n");
+	while ((c = getopt(argc, argv, "hdl:p:")) != -1) {
+		switch (c) {
+			case 'h':
+				showhelp = 1;
+				break;
+			case 'd':
+				logmask++;
+				break;
+			case 'l':
+				irc_mainport = atoi(optarg);
+				break;
+			case 'p':
+				rc_port = atoi(optarg);
+				break;
+			case '?':
+				logg(ERR, "Unknown argument '%c'\n",
+						optopt);
+				showhelp = 2;
+				break;
+			default:
+				logg(ERR, "getopt error (%d,%s)\n",
+						optopt,
+						optarg?optarg:"<null>");
+		}
+	}
+
+	if (argc < 2 || argc != optind + 1 || showhelp) {
+		fprintf(stderr, doc_usage, argv[0], irc_mainport, rc_port);
 		return 1;
-	} else 
-		server_name = (char*)argv[1];
+	} else
+		server_name = (char*)argv[optind];
+
+	logg_setmask((1<<logmask)-1);
 
 	signal(SIGINT, sigint_handler);
-
-	if ((p = lws_cmdline_option(argc, argv, "-d")))
-		logs = atoi(p);
 
 	lws_set_log_level(logs, NULL);
 
