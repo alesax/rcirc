@@ -1256,6 +1256,15 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 					  buff__sprintf
 					  (":%s 001 %s :Welcome to the Internet Relay Network %s\r\n",
 					   selfident, c, c));
+			sess__add_irc_out(s,
+					  buff__sprintf
+					  (":%s 375 %s :%s message of the day\r\n"
+					   ":%s 372 %s :RocketChat->IRC gateway!\r\n"
+					   ":%s 376 %s :End of message of the day.\r\n",
+					   selfident, c, selfident,
+					   selfident, c,
+					   selfident, c));
+
 			IFFREE(s->irc.nick);
 			s->irc.nick = strdup(c);
 		}
@@ -1263,7 +1272,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	} else if (!strcmp(command, "USER")) {
 		/* TODO */
 	} else if (!strcmp(command, "PING")) {
-		sess__add_irc_out(s, buff__sprintf("PONG %s\r\n", c));
+		sess__add_irc_out(s, buff__sprintf(":%s PONG %s :%s\r\n", selfident, selfident, c));
 	} else if (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
 		IFFREE(s->rc.token);
 		if (*c == ':') c++;
