@@ -1441,9 +1441,8 @@ int main(int argc, char **argv)
 					int r =
 					    recv(pollfds[i].fd,
 						 s->irc_buff + s->irc_buff_head,
-						 s->irc_buff +
 						 sizeof(s->irc_buff) -
-						 (char *)(unsigned long long)s->
+						 (unsigned long long)s->
 						 irc_buff_head, 0);
 
 					logg(DBG4, "IRC-RX: %.*s\n", r,
