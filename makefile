@@ -6,8 +6,8 @@ all: $(TARGET)
 
 OBJS = rcirc.o util.o json.o
 
-CPPFLAGS = -I. -pedantic -Wall
-LDFLAGS = -lpthread -lwebsockets -ljson-c
+CPPFLAGS = -g -std=c99 -I. -pedantic -Wall
+LDFLAGS = -g -lpthread -lwebsockets -ljson-c
 
 clean:
 	rm -f $(OBJS) $(TARGET)

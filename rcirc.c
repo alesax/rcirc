@@ -417,7 +417,7 @@ int sess__rc_work(t_sess * s, const char *in)
 					if (m) {
 						logg(DBG4, "Repeated message %s\n", _id);
 					} else {
-						const char s_reactions = NULL; /* TODO: */
+						const char *s_reactions = NULL; /* TODO: */
 						sess__rc_add_message(s, _id, msg, username, s_reactions);
 					}
 
