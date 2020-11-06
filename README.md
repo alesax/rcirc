@@ -12,10 +12,10 @@ make
 
 ## Running
 
-./rcirc <servername>
+    ./rcirc -p <irc_port> <servername>
 
 Then connect with IRC client, for example:
 
-irssi  -c localhost -p 6666 -w <RocketChat secret token>
+    irssi  -c localhost -p <irc_port> -w <RocketChat secret token>
 
 
