@@ -24,8 +24,11 @@
 #define MALLOC malloc
 #define NEW(x) (x *)memset(MALLOC(sizeof(x)), 0, sizeof(x))
 #define IFFREE(x) if((x)) {free (x); (x) = NULL;}
+#define STRDUP(x) ((x)?(strdup((x))):NULL)
 
 #define EROOMNOTFOUND -1
+
+#define STATE_SHUTTING_DOWN 1
 
 #define MAXFD 512
 
@@ -63,10 +66,12 @@ typedef struct t_rc_command {
 } t_rc_command;
 
 typedef struct t_rc_message {
-	t_rc_id id;
+	char *id;
 	char t;
 	char *dstname;
 	char *msg;
+	char *sender;
+	char *reactions;
 	time_t tim;
 
 	struct t_rc_message *next;
@@ -80,6 +85,7 @@ typedef struct t_rc_sndmsg {
 typedef struct t_sess {
 	int irc_fd;
 	int rch_fd;
+	int state;
 	struct {
 		char *nick;
 	} irc;
@@ -106,12 +112,15 @@ typedef struct t_sess {
 		char finished;
 		char established;
 
+		time_t last_ping;
+
 		char *self_id;
 		char *token;
 
 		t_rc_command *commands;
 		t_rc_room *rooms;
 		t_rc_message *messages;
+		t_rc_message *in_messages;
 		t_rc_sndmsg *sent;
 	} rc;
 
@@ -121,6 +130,7 @@ typedef struct t_sess {
 struct lws_pollfd pollfds[MAXFD];
 struct t_sess *sessions[MAXFD];
 int maxfds = 0;
+static int rc_timeout = 60*5;
 const char *selfident = "myserver";
 static struct t_sess *session_list = NULL;
 
@@ -152,11 +162,9 @@ t_buff *buff__new();
 void buff__free(t_buff *b);
 
 void sess__add_irc_out(t_sess * s, t_buff * b);
-int sess__irc_send_message(t_sess * s, char t, const char *srcname,
-			   const char *name, const char *msg);
 int sess__irc_nick_set(t_sess * s, const char *newnick);
 int sess__irc_send_message(t_sess * s, char t, const char *srcname,
-			   const char *name, const char *msg);
+			   const char *name, char *msg);
 
 void sess__add_sent_message(t_sess * s, const char *id);
 int sess__find_sent_message(t_sess * s, const char *id);
@@ -182,6 +190,8 @@ int sess__rc_join_room(t_sess * s, char t, const char *name);
 int sess__rc_queue_message(t_sess * s, char t, const char *name,
 			   const char *msgs);
 void rc_message__free(t_rc_message * m);
+t_rc_message *sess__rc_find_message(t_sess *s, const char *id);
+t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, const char *sender, const char *reactions);
 int sess__rc_queue_process(t_sess * s);
 int sess__rc_send_message(t_sess * s, char t, const char *name,
 			  const char *msg);
@@ -251,6 +261,7 @@ int sess__rc_work(t_sess * s, const char *in)
 		const char *msg = json_object_get_string(jo);
 		if (!strcmp(msg, "ping")) {
 			msg = NULL;
+			s->rc.last_ping = time(NULL);
 			sess__add_rc_out(s, -1, "{\"msg\":\"pong\"}");
 			goto finished;
 		}
@@ -344,17 +355,18 @@ int sess__rc_work(t_sess * s, const char *in)
 		} else {
 			int cnt_args = json_object_array_length(args);
 			for (int i = 0; i < cnt_args; i++) {
+				json_object *attachments = NULL, *reactions = NULL;
 				json_object *p =
 				    json_object_array_get_idx(args, i);
 
 				char *msg = NULL, *rid = NULL, *username =
-				    NULL, *roomName = NULL, *t = NULL;
+				    NULL, *roomName = NULL, *t = NULL, *tmid = NULL;
 				int roomParticipant = 0;
 
 				if ((r = json_read(NULL, p,
 						   "{payload:{message:{msg:%s} rid:%s sender:{username:%s} type:%s _id:%s}}",
 						   &msg, &rid, &username, &t,
-						   &_id)) == 5) {
+						   &_id)) >= 5) {
 
 					char *dst = s->irc.nick;
 					if (!strcmp(dst, username)) {
@@ -372,9 +384,10 @@ int sess__rc_work(t_sess * s, const char *in)
 				} else
 				    if ((r =
 					 json_read(NULL, p,
-						   "{msg:%s rid:%s _id:%s u:{username:%s}}",
+						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s}",
 						   &msg, &rid, &_id,
-						   &username)) == 4) {
+						   &username, &attachments, &reactions, &tmid)) >= 4 
+						   && msg && rid && _id && username) {
 
 					t_rc_room *room =
 					    sess__rc_room_by_rid(s, rid);
@@ -392,8 +405,21 @@ int sess__rc_work(t_sess * s, const char *in)
 
 					}
 
+					/*
+					 * was this message sent by us? */
 					if (sess__find_sent_message(s, _id))
 						goto finished;
+
+					/*
+					 * have we already seen this message? */
+					t_rc_message *m = sess__rc_find_message(s, _id);
+
+					if (m) {
+						logg(DBG4, "Repeated message %s\n", _id);
+					} else {
+						const char s_reactions = NULL; /* TODO: */
+						sess__rc_add_message(s, _id, msg, username, s_reactions);
+					}
 
 					if (t && (*t == 'c' || *t == 'p')
 					    && roomName)
@@ -422,6 +448,7 @@ int sess__rc_work(t_sess * s, const char *in)
 				IFFREE(username);
 				IFFREE(roomName);
 				IFFREE(t);
+				IFFREE(tmid);
 			}
 		}
 
@@ -461,9 +488,14 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		     in ? (char *)in : "(null)");
 		s->rc.client_wsi = NULL;
 		s->rc.finished = 1;
-		lws_timed_callback_vh_protocol(s->rc.vhost,
-					       s->rc.protocol,
-					       LWS_CALLBACK_USER, 1);
+		sess__add_irc_out(s,
+				  buff__sprintf("RocketChat connection error\r\n"));
+
+		s->state |= STATE_SHUTTING_DOWN;
+		if (s->rc.vhost && s->rc.protocol)
+			lws_timed_callback_vh_protocol(s->rc.vhost,
+						       s->rc.protocol,
+						       LWS_CALLBACK_USER, 1);
 		break;
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -479,7 +511,7 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 			goto skip;
 		}
 
-		logg(DBG4, "RC-TX: %.*s\n", b->left,
+		logg(DBG4, "RC-TX[%d]: %.*s\n", s->rc_poll->fd, b->left,
 		     (const char *)b->buff + LWS_PRE);
 		m = lws_write(wsi, ((unsigned char *)b->buff) + LWS_PRE,
 			      b->left, LWS_WRITE_TEXT);
@@ -500,10 +532,15 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_CLIENT_CLOSED:
-		logg(ERR, "%s: LWS_CALLBACK_CLIENT_CLOSED\n", __func__);
+		logg(DBG1, "%s: LWS_CALLBACK_CLIENT_CLOSED\n", __func__);
 		s->rc.client_wsi = NULL;
 		s->rc.established = 0;
 		s->rc.finished = 1;
+
+		sess__add_irc_out(s,
+				  buff__sprintf("RocketChat closing socket\r\n"));
+
+		s->state |= STATE_SHUTTING_DOWN;
 		lws_timed_callback_vh_protocol(s->rc.vhost, s->rc.protocol,
 					       LWS_CALLBACK_USER, 1);
 		break;
@@ -521,7 +558,7 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_CLIENT_RECEIVE:
-		logg(DBG4, "RC-RX: %s\n", (const char *)in);
+		logg(DBG4, "RC-RX[%d]: %s\n", s->rc_poll->fd, (const char *)in);
 
 		sess__rc_work(s, in);
 		break;
@@ -877,9 +914,10 @@ int sess__cb_rc_login(t_sess * s, void *data, json_object * j)
 	if (json_read(NULL, j, "{error:{error:%d reason:%s}}", &error, &reason)
 	    == 2 && error) {
 		sess__add_irc_out(s,
-				  buff__sprintf("Error %d: %s\r\n", error,
+				  buff__sprintf("RocketChat Error %d: %s\r\n", error,
 						reason));
 
+		s->state |= STATE_SHUTTING_DOWN;
 		IFFREE(reason);
 	}
 	return 0;
@@ -1482,7 +1520,7 @@ int main(int argc, char **argv)
 				continue;
 			ret--;
 
-			if (sessions[i] && pollfds[i].revents & POLLNVAL) {
+			if (s && pollfds[i].revents & POLLNVAL) {
 				sess__close(s);
 				sess__free(s);
 				continue;
@@ -1589,7 +1627,7 @@ int main(int argc, char **argv)
 		time_t now = time(NULL);
 
 		for (t_sess *s = session_list; s; s = s->next) {
-			if (s->rc.last_ping && (now - s->rc.last_ping) > rc_timeout) {
+			if (s->rc.last_ping && (now - s->rc.last_ping) > rc_timeout && !(s->state & STATE_SHUTTING_DOWN)) {
 				sess__add_irc_out(s,
 						buff__sprintf("RocketChat server didn't ping us in %d secs, closing\r\n",
 							now - s->rc.last_ping));
