@@ -974,19 +974,32 @@ int sess__irc_nick_set(t_sess * s, const char *newnick)
 }
 
 int sess__irc_send_message(t_sess * s, char t, const char *srcname,
-			   const char *name, const char *msg)
+			   const char *name, char *msg)
 {
 	int r = 0;
+	char pmsg[2];
+	char *next, *start;
 
 	if (t == 'c') {
+		pmsg [0] = '#';
+		pmsg [1] = '\0';
+	} else
+		pmsg [0] = '\0';
+
+
+	start = msg;
+	while (1) {
+		next = strchr(start, '\n');
+		if (next) *next = '\0';
+
 		sess__add_irc_out(s,
-				  buff__sprintf(":%s PRIVMSG #%s :%s\r\n",
-						srcname, name, msg));
-	} else {
-		sess__add_irc_out(s,
-				  buff__sprintf(":%s PRIVMSG %s :%s\r\n",
-						srcname, name, msg));
+				  buff__sprintf(":%s PRIVMSG %s%s :%s\r\n",
+					srcname, pmsg, name, start));
+
+		if (! next || !(*(next+1))) break;
+		else start = next + 1;
 	}
+
 	return r;
 }
 
@@ -1114,6 +1127,33 @@ int sess__rc_queue_message(t_sess * s, char t, const char *name,
 	return 0;
 }
 
+t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, const char *sender, const char *reactions)
+{
+	t_rc_message *m;
+
+	m = NEW(t_rc_message);
+
+	m->id = strdup(id);
+	m->msg = STRDUP(msg);
+	m->sender = STRDUP(sender);
+	m->reactions = STRDUP(reactions);
+
+	m->next = s->rc.in_messages;
+	s->rc.in_messages = m;
+	return m;
+}
+
+t_rc_message *sess__rc_find_message(t_sess *s, const char *id)
+{
+
+	t_rc_message *m = NULL;
+
+	for (m = s->rc.in_messages; m && strcmp(m->id, id); m = m->next);
+
+	return (m);
+
+}
+
 void rc_message__free(t_rc_message * m)
 {
 	IFFREE(m->dstname);
@@ -1171,6 +1211,8 @@ int sess__free(t_sess * s)
 
 int sess__close(t_sess * s)
 {
+	logg(DBG1, "Closing session FDs %d,%d\n", s->poll->fd, s->rc_poll->fd);
+
 	shutdown(s->poll->fd, SHUT_RDWR);
 	close(s->poll->fd);
 	s->rc.finished = 1;
@@ -1208,7 +1250,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 			st = 1;
 			break;
 		case '\n':
-			if (st == 1)
+	//		if (st == 1)
 				st = 2;
 			break;
 		default:
@@ -1221,7 +1263,9 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	if (st != 2)
 		return 1;
 
-	*(c - 1) = '\0';
+	if (c > s->irc_buff && (*(c-1) == '\r')) *(c - 1) = '\0';
+			else
+	*(c ) = '\0';
 	end = c;
 
 	logg(DBG2, "IRC received: %s\n", s->irc_buff);
@@ -1258,7 +1302,11 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 					   selfident, c, c));
 			sess__add_irc_out(s,
 					  buff__sprintf
-					  (":%s 375 %s :%s message of the day\r\n"
+					  
+ (":myserver 002 alnovak Your host is localhost, running version 1\r\n"
+                        ":myserver 003 alnovak This server was created Tue Oct 22, 16:00:54 UTC\r\n"
+                        ":myserver 004 alnovak localhost 1 oirw abeIiklmnopqstv\r\n"
+					   ":%s 375 %s :%s message of the day\r\n"
 					   ":%s 372 %s :RocketChat->IRC gateway!\r\n"
 					   ":%s 376 %s :End of message of the day.\r\n",
 					   selfident, c, selfident,
@@ -1302,6 +1350,9 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 		sess__rc_join_room(s, 'c', c);
 	} else if (!strcmp(command, "QUERY")) {
 		sess__rc_join_room(s, 'd', c);
+	} else if (!strcmp(command, "QUIT")) {
+		shutdown(s->poll->fd, SHUT_RDWR);
+		shutdown(s->rc_poll->fd, SHUT_RDWR);
 	} else {
 		logg(ERR, "Unrecognized command %s\n", command);
 	}
@@ -1310,6 +1361,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	memcpy(s->irc_buff, end + 1,
 	       s->irc_buff + s->irc_buff_head - (end + 1));
 	s->irc_buff_head -= (end - s->irc_buff + 1);
+					if (s->irc_buff_head > 513) { logg(ERR, "s->irc_buff_head = %d\n", s->irc_buff_head); *(int*)0 = -1; }
 
 	return 0;
 }
@@ -1424,18 +1476,20 @@ int main(int argc, char **argv)
 
 
 		for (int i = 0; i < maxfds && ret > 0; i++) {
+			t_sess *s = sessions[i];
+
 			if (pollfds[i].revents == 0)
 				continue;
 			ret--;
 
 			if (sessions[i] && pollfds[i].revents & POLLNVAL) {
-				sess__close(sessions[i]);
+				sess__close(s);
+				sess__free(s);
 				continue;
 			}
 
-			if (sessions[i] && sessions[i]->irc_fd == pollfds[i].fd) {
+			if (s && s->irc_fd == pollfds[i].fd) {
 				logg(DBG4, "gotcha [%d] %d -> %d\n", pollfds[i].fd, pollfds[i].events, pollfds[i].revents);
-				t_sess *s = sessions[i];
 				if (pollfds[i].revents & (POLLIN | POLLNVAL)) {
 					/* IRC RX */
 					int r =
@@ -1445,7 +1499,7 @@ int main(int argc, char **argv)
 						 (unsigned long long)s->
 						 irc_buff_head, 0);
 
-					logg(DBG4, "IRC-RX: %.*s\n", r,
+					logg(DBG4, "IRC-RX[%d]: %.*s\n", pollfds[i].fd, r,
 					     s->irc_buff + s->irc_buff_head);
 
 					if (r == 0) {
@@ -1471,10 +1525,14 @@ int main(int argc, char **argv)
 
 					while (!irc__process(s, context)) ;
 
-				}
-				if (pollfds[i].revents & POLLOUT) {
+				} else if (pollfds[i].revents & POLLOUT) {
 					if (!s->irc_out_buff) {
 						pollfds[i].events &= ~POLLOUT;
+
+						if (s->state & STATE_SHUTTING_DOWN) {
+							shutdown(s->poll->fd, SHUT_RDWR);
+							shutdown(s->rc_poll->fd, SHUT_RDWR);
+						}
 					} else {
 						int r =
 						    send(pollfds[i].fd,
@@ -1487,8 +1545,10 @@ int main(int argc, char **argv)
 							exit(1);
 
 						}
-						logg(DBG4, "IRC-TX: %.*s\n",
-						     r, s->irc_out_buff->start);
+						logg(DBG4, "IRC-TX[%d]: %.*s\n",
+								pollfds[i].fd,
+								r,
+								s->irc_out_buff->start);
 
 						s->irc_out_buff->start += r;
 						s->irc_out_buff->left -= r;
@@ -1508,17 +1568,33 @@ int main(int argc, char **argv)
 					}
 
 				} else {
-					logg(DBG1,"TODO:\n");
+					logg(DBG1,"TODO[%d]: -> %x\n", pollfds[i].fd, pollfds[i].revents);
 				}
 			} else {
 				logg(DBG4, "gotcha-2 [%d] %d -> %d\n", pollfds[i].fd, pollfds[i].events, pollfds[i].revents);
 				int ret = lws_service_fd(context, &pollfds[i]);
 				if (ret) {
 					logg(ERR,"lws_service_fd(%d)... %d:\n",  pollfds[i].fd, ret);
+					sessions[i]->rc.finished = 1;
+					sessions[i]->state |= STATE_SHUTTING_DOWN;
+					sess__add_irc_out(sessions[i],
+							  buff__sprintf("RocketChat connection error (%d)\r\n", ret));
+
 				}
 			}
 			pollfds[i].revents = 0;
 
+		}
+
+		time_t now = time(NULL);
+
+		for (t_sess *s = session_list; s; s = s->next) {
+			if (s->rc.last_ping && (now - s->rc.last_ping) > rc_timeout) {
+				sess__add_irc_out(s,
+						buff__sprintf("RocketChat server didn't ping us in %d secs, closing\r\n",
+							now - s->rc.last_ping));
+				s->state |= STATE_SHUTTING_DOWN;
+			}
 		}
 	}
 
