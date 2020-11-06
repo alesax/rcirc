@@ -38,6 +38,8 @@ int json_read(void *data, struct json_object *object, const char *fmt, ...)
 	for (c = fmt; (z = *c); c++) {
 		if (mode == 5) {
 			mode = 0;
+			va_arg(args, void*);
+			continue;
 		} else if (mode == 3) {
 
 			switch (z) {
@@ -451,6 +453,42 @@ int main(int argc, char **argv)
 		      &roomName);
 	printf("R=%d,username=%s,roomName=%s\n", r, username, roomName);
 
+	printf("==== TEST 6 ====\n");
+	jo = json_tokener_parse("{\n"
+			"                \"_id\": \"Rs9iRsadaasdhGHx\",\n"
+			"                \"_updatedAt\": {\n"
+			"                    \"$date\": 1602491275690\n"
+			"                },\n"
+			"                \"channels\": [],\n"
+			"                \"mentions\": [],\n"
+			"                \"msg\": \"down\",\n"
+			"                \"reactions\": {\n"
+			"                    \":flushed:\": {\n"
+			"                        \"usernames\": [\n"
+			"                            \"amusta\"\n"
+			"                        ]\n"
+			"                    }\n"
+			"                },\n"
+			"                \"rid\": \"GisRHFYEMmWoM5\",\n"
+			"                \"tmid\": \"somX89q4vHjavp\",\n"
+			"                \"ts\": {\n"
+			"                    \"$date\": 1602491242261\n"
+			"                },\n"
+			"                \"u\": {\n"
+			"                    \"_id\": \"n2bzjQNCcEuq2FDWi\",\n"
+			"                    \"name\": \"Harty\",\n"
+			"                    \"username\": \"gonzo\"\n"
+			"                }\n"
+			"            }\n"
+			);
+	{
+		char *msg = NULL, *rid = NULL, *_id = NULL, *username = NULL, *tmid = NULL;
+		json_object *attachments = NULL, *reactions = NULL;
+		r = json_read(NULL, jo,
+			   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s}",
+			   &msg, &rid, &_id, &username, &attachments, &reactions, &tmid);
+		printf("r=%d\n", r);
+	}
 	return 0;
 }
 #endif
