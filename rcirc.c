@@ -1249,7 +1249,7 @@ int sess__free(t_sess * s)
 
 int sess__close(t_sess * s)
 {
-	logg(DBG1, "Closing session FDs %d,%d\n", s->poll->fd, s->rc_poll->fd);
+	logg(DBG1, "Closing session FDs %d,%d\n", s->poll->fd, s->rc_poll?s->rc_poll->fd:-1);
 
 	shutdown(s->poll->fd, SHUT_RDWR);
 	close(s->poll->fd);
@@ -1568,8 +1568,8 @@ int main(int argc, char **argv)
 						pollfds[i].events &= ~POLLOUT;
 
 						if (s->state & STATE_SHUTTING_DOWN) {
-							shutdown(s->poll->fd, SHUT_RDWR);
-							shutdown(s->rc_poll->fd, SHUT_RDWR);
+							if (s->poll) shutdown(s->poll->fd, SHUT_RDWR);
+							if (s->rc_poll) shutdown(s->rc_poll->fd, SHUT_RDWR);
 						}
 					} else {
 						int r =
