@@ -5,5 +5,6 @@
 
 int json_read(void *data, struct json_object *object, const char *fmt, ...);
 struct json_object *json_create(void *data, const char *fmt, ...);
+char *reactions2string(struct json_object *jo);
 
 #endif

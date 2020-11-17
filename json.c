@@ -348,6 +348,61 @@ struct json_object *json_create(void *data, const char *fmt, ...)
 	return NULL;
 }
 
+char *reactions2string(struct json_object *jo)
+{
+	int len = 0;
+	char *str, *p;
+
+	if (!jo) return (NULL);
+
+	json_object_object_foreach(jo, key, value) {
+		if (p != str) len ++;
+		len += strlen(key);
+		len ++;
+
+		struct json_object *un;
+		if (json_object_object_get_ex(value, "usernames", &un)) {
+			int cnt = json_object_array_length(un);
+			for (int i = 0; i < cnt; i++) {
+				if (i) len ++;
+				len += strlen(json_object_get_string(json_object_array_get_idx(un, i)));
+			}
+		}
+	}
+
+	if (len == 0) {
+		return NULL;
+	}
+	len ++;
+
+	str = malloc(len);
+	p = str;
+	*p = '\0';
+	json_object_object_foreach(jo, keyx, valuex) {
+		if (p != str) {
+			*(p++) = ' '; *p = '\0';
+		}
+		p = stpcpy(p, keyx);
+		*(p++) = '='; *p = '\0';
+
+		struct json_object *un;
+		if (json_object_object_get_ex(valuex, "usernames", &un)) {
+			int cnt = json_object_array_length(un);
+			for (int i = 0; i < cnt; i++) {
+				if (i) {
+					*(p++) = ',';
+					*p = '\0';
+				}
+				p = stpcpy(p,
+					   json_object_get_string(json_object_array_get_idx(un, i)));
+			}
+		}
+
+	}
+	return (str);
+}
+
+
 #ifdef _JSON_TEST
 int main(int argc, char **argv)
 {
@@ -489,6 +544,17 @@ int main(int argc, char **argv)
 			   &msg, &rid, &_id, &username, &attachments, &reactions, &tmid);
 		printf("r=%d\n", r);
 	}
+
+	jo = json_tokener_parse("{"
+                    "\":flushed:\": {\n"
+                        "\"usernames\": [\n"
+                         "   \"ahmie\"\n"
+                        "]\n"
+                    "},\n"
+		    "\":bedazzled:\":{\"usernames\":[\"eva\",\"vasek\"]}"
+                "}");
+
+	printf (reactions2string(jo));
 	return 0;
 }
 #endif
