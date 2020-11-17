@@ -18,6 +18,7 @@
 #include <poll.h>
 #include <json-c/json.h>
 #include <arpa/inet.h>
+#include <search.h>
 #include "json.h"
 #include "util.h"
 
@@ -66,7 +67,7 @@ typedef struct t_rc_command {
 } t_rc_command;
 
 typedef struct t_rc_message {
-	char *id;
+	const char *id;
 	char t;
 	char *dstname;
 	char *msg;
@@ -121,6 +122,7 @@ typedef struct t_sess {
 		t_rc_room *rooms;
 		t_rc_message *messages;
 		t_rc_message *in_messages;
+		void *in_messages_tree;
 		t_rc_sndmsg *sent;
 	} rc;
 
@@ -1165,7 +1167,13 @@ int sess__rc_queue_message(t_sess * s, char t, const char *name,
 	return 0;
 }
 
-t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, const char *sender, const char *reactions)
+static int rc_message_cmpid(const t_rc_message *a, const t_rc_message *b)
+{
+	return strcmp(a->id, b->id);
+}
+
+t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg,
+				   const char *sender, const char *reactions)
 {
 	t_rc_message *m;
 
@@ -1178,17 +1186,24 @@ t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, c
 
 	m->next = s->rc.in_messages;
 	s->rc.in_messages = m;
+	tsearch((void*)m, (void**)&s->rc.in_messages_tree,
+		(int(*)(const void *, const void*))rc_message_cmpid);
+
 	return m;
 }
 
 t_rc_message *sess__rc_find_message(t_sess *s, const char *id)
 {
 
-	t_rc_message *m = NULL;
+	t_rc_message **m = NULL;
+	t_rc_message fm;
+	fm.id = id;
 
-	for (m = s->rc.in_messages; m && strcmp(m->id, id); m = m->next);
+	m = (t_rc_message**)tfind((void*)&fm, (void**)&s->rc.in_messages_tree,
+		 (int(*)(const void *, const void*))rc_message_cmpid);
 
-	return (m);
+	if (m) return (*m);
+	else return (NULL);
 
 }
 
@@ -1241,6 +1256,8 @@ int sess__free(t_sess * s)
 
 	*d = s->next;
 
+	tdestroy((void*)s->rc.in_messages_tree, rc_message__free);
+
 	/* TODO: add pretty much all freeing !!! */
 	free(s);
 
@@ -1249,7 +1266,8 @@ int sess__free(t_sess * s)
 
 int sess__close(t_sess * s)
 {
-	logg(DBG1, "Closing session FDs %d,%d\n", s->poll->fd, s->rc_poll?s->rc_poll->fd:-1);
+	logg(DBG1, "Closing session FDs %d,%d\n", s->poll->fd,
+	     s->rc_poll?s->rc_poll->fd:-1);
 
 	shutdown(s->poll->fd, SHUT_RDWR);
 	close(s->poll->fd);
