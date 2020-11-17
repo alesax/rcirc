@@ -1520,7 +1520,7 @@ int main(int argc, char **argv)
 				continue;
 			ret--;
 
-			if (s && pollfds[i].revents & POLLNVAL) {
+			if (s && pollfds[i].revents & (POLLNVAL | POLLERR)) {
 				sess__close(s);
 				sess__free(s);
 				continue;
@@ -1528,7 +1528,7 @@ int main(int argc, char **argv)
 
 			if (s && s->irc_fd == pollfds[i].fd) {
 				logg(DBG4, "gotcha [%d] %d -> %d\n", pollfds[i].fd, pollfds[i].events, pollfds[i].revents);
-				if (pollfds[i].revents & (POLLIN | POLLNVAL)) {
+				if (pollfds[i].revents & POLLIN) {
 					/* IRC RX */
 					int r =
 					    recv(pollfds[i].fd,
@@ -1540,7 +1540,7 @@ int main(int argc, char **argv)
 					logg(DBG4, "IRC-RX[%d]: %.*s\n", pollfds[i].fd, r,
 					     s->irc_buff + s->irc_buff_head);
 
-					if (r == 0) {
+					if (r == 0 || pollfds[i].revents & POLLHUP) {
 						logg(DBG1,"Going to close %d+%d\n", pollfds[i].fd, pollfds[s->rc.fd_idx].fd);
 						shutdown(pollfds[i].fd,
 							 SHUT_RDWR);
