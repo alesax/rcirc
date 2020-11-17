@@ -353,10 +353,10 @@ char *reactions2string(struct json_object *jo)
 	int len = 0;
 	char *str, *p;
 
-	if (!jo) return (NULL);
+	if (!jo || json_object_get_type(jo) != json_type_object) return (NULL);
 
 	json_object_object_foreach(jo, key, value) {
-		if (p != str) len ++;
+		if (len) len ++;
 		len += strlen(key);
 		len ++;
 

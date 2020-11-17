@@ -33,6 +33,9 @@
 
 #define MAXFD 512
 
+static char *MSG_edited = "[edited]";
+static char *MSG_removed = "[removed]";
+
 static char *server_name = NULL;
 
 static int interrupted;
@@ -136,6 +139,8 @@ static int rc_timeout = 60*5;
 const char *selfident = "myserver";
 static struct t_sess *session_list = NULL;
 
+#define SWAPC(a, b) {char *__c; __c = a; a = b; b = __c; }
+
 void poll_removefd(int i)
 {
 	for (t_sess *s = session_list; s; s = s->next) {
@@ -166,7 +171,7 @@ void buff__free(t_buff *b);
 void sess__add_irc_out(t_sess * s, t_buff * b);
 int sess__irc_nick_set(t_sess * s, const char *newnick);
 int sess__irc_send_message(t_sess * s, char t, const char *srcname,
-			   const char *name, char *msg);
+			   const char *name, char *pfx, char *msg);
 
 void sess__add_sent_message(t_sess * s, const char *id);
 int sess__find_sent_message(t_sess * s, const char *id);
@@ -362,7 +367,8 @@ int sess__rc_work(t_sess * s, const char *in)
 				    json_object_array_get_idx(args, i);
 
 				char *msg = NULL, *rid = NULL, *username =
-				    NULL, *roomName = NULL, *t = NULL, *tmid = NULL;
+				    NULL, *roomName = NULL, *t = NULL, *tmid = NULL,
+					*mt = NULL;
 				int roomParticipant = 0;
 
 				if ((r = json_read(NULL, p,
@@ -379,16 +385,16 @@ int sess__rc_work(t_sess * s, const char *in)
 							dst = r->name;
 					}
 					if (sess__find_sent_message(s, _id))
-						goto finished;
+						goto finished2;
 					sess__irc_send_message(s, 'd', username,
-							       dst, msg);
+							       dst, NULL, msg);
 
 				} else
 				    if ((r =
 					 json_read(NULL, p,
-						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s}",
+						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
 						   &msg, &rid, &_id,
-						   &username, &attachments, &reactions, &tmid)) >= 4 
+						   &username, &attachments, &reactions, &tmid, &mt)) >= 4 
 						   && msg && rid && _id && username) {
 
 					t_rc_room *room =
@@ -410,7 +416,12 @@ int sess__rc_work(t_sess * s, const char *in)
 					/*
 					 * was this message sent by us? */
 					if (sess__find_sent_message(s, _id))
-						goto finished;
+						goto finished2;
+
+					char *s_reactions = reactions2string(reactions);
+
+					char *_pfx = NULL;
+					char *_msg = msg;
 
 					/*
 					 * have we already seen this message? */
@@ -418,38 +429,57 @@ int sess__rc_work(t_sess * s, const char *in)
 
 					if (m) {
 						logg(DBG4, "Repeated message %s\n", _id);
+
+						if(s_reactions && (!m->reactions || strcmp(m->reactions, s_reactions))) {
+							SWAPC(m->reactions, s_reactions);
+							_pfx = m->reactions;
+						}
+
+						if(strcmp(m->msg, msg)) {
+							SWAPC(m->msg, msg);
+							_pfx = MSG_edited;
+
+							if (mt && !strcmp(mt, "rm")) {
+								_pfx = MSG_removed;
+								_msg = msg;
+							}
+						}
+
+						if (!_pfx)
+							goto finished2;
 					} else {
-						const char *s_reactions = NULL; /* TODO: */
 						sess__rc_add_message(s, _id, msg, username, s_reactions);
 					}
 
+					char *_dest = roomName;
+					char _t = 'd';
+
 					if (t && (*t == 'c' || *t == 'p')
-					    && roomName)
-						sess__irc_send_message(s, 'c',
-								       username,
-								       roomName,
-								       msg);
-					else if (room
+					    && roomName) {
+						_t = 'c';
+					} else if (room
 						 && !strcmp(username,
-							    s->irc.nick))
-						sess__irc_send_message(s, 'd',
-								       username,
-								       room->
-								       name,
-								       msg);
-					else
-						sess__irc_send_message(s, 'd',
-								       username,
-								       s->irc.
-								       nick,
-								       msg);
+							    s->irc.nick)) {
+					       _dest = room->name;
+					} else {
+						_dest = s->irc.nick;
+					}
+
+					sess__irc_send_message(s, _t,
+							       username,
+							       _dest,
+							       _pfx,
+							       _msg);
 
 				}
+finished2:
+
 				IFFREE(msg);
 				IFFREE(rid);
 				IFFREE(username);
 				IFFREE(roomName);
 				IFFREE(t);
+				IFFREE(mt);
 				IFFREE(tmid);
 			}
 		}
@@ -1014,7 +1044,7 @@ int sess__irc_nick_set(t_sess * s, const char *newnick)
 }
 
 int sess__irc_send_message(t_sess * s, char t, const char *srcname,
-			   const char *name, char *msg)
+			   const char *name, char *pfx, char *msg)
 {
 	int r = 0;
 	char pmsg[2];
@@ -1032,9 +1062,14 @@ int sess__irc_send_message(t_sess * s, char t, const char *srcname,
 		next = strchr(start, '\n');
 		if (next) *next = '\0';
 
-		sess__add_irc_out(s,
-				  buff__sprintf(":%s PRIVMSG %s%s :%s\r\n",
-					srcname, pmsg, name, start));
+		if (! pfx)
+			sess__add_irc_out(s,
+					  buff__sprintf(":%s PRIVMSG %s%s :%s\r\n",
+						srcname, pmsg, name, start));
+		else
+			sess__add_irc_out(s,
+					  buff__sprintf(":%s PRIVMSG %s%s :\x02%s\x0f %s\r\n",
+						srcname, pmsg, name, pfx, start));
 
 		if (! next || !(*(next+1))) break;
 		else start = next + 1;
@@ -1210,6 +1245,7 @@ t_rc_message *sess__rc_find_message(t_sess *s, const char *id)
 void rc_message__free(t_rc_message * m)
 {
 	IFFREE(m->dstname);
+	IFFREE(m->reactions);
 	IFFREE(m->msg);
 	IFFREE(m);
 }
@@ -1256,7 +1292,7 @@ int sess__free(t_sess * s)
 
 	*d = s->next;
 
-	tdestroy((void*)s->rc.in_messages_tree, rc_message__free);
+	tdestroy((void*)s->rc.in_messages_tree, (void(*)(void*))rc_message__free);
 
 	/* TODO: add pretty much all freeing !!! */
 	free(s);
