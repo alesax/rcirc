@@ -227,9 +227,10 @@ int sess__add_rc_out(t_sess * s, int len, const char *c)
 	*s->rc.out_buff_tail = buff;
 	s->rc.out_buff_tail = &buff->next;
 
-	lws_callback_on_writable(s->rc.client_wsi);
-
-	s->rc_poll->events |= POLLOUT;
+	if (s->rc.client_wsi) {
+		lws_callback_on_writable(s->rc.client_wsi);
+		s->rc_poll->events |= POLLOUT;
+	}
 	return 0;
 }
 
