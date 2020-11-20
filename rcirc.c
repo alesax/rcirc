@@ -1366,8 +1366,8 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	b = s->irc_buff;
 	c = strchr(b, ' ');
 	if (!c) {
-		logg(ERR, "Can\'t find #1 space\n");
-		goto error_parsing;
+		logg(DBG3, "IRC command without parameter\n");
+		goto skip_parsing;
 	}
 	*c = '\0';
 
@@ -1383,7 +1383,7 @@ int irc__process(t_sess * s, struct lws_context *ctx)
 	} else {
 	}
 	c += 1;
-
+skip_parsing:
 	command = b;
 
 	logg(ERR, "command \'%s\'\n", command);
