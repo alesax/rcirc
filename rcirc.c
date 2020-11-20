@@ -1438,7 +1438,7 @@ skip_parsing:
 	command = b;
 
 	logg(ERR, "command \'%s\'\n", command);
-	if (!strcmp(command, "NICK")) {
+	if (c && !strcmp(command, "NICK")) {
 		if (!s->irc.nick || !strcmp(s->irc.nick, c)) {
 			sess__add_irc_out(s,
 					  buff__sprintf
@@ -1463,14 +1463,14 @@ skip_parsing:
 
 	} else if (!strcmp(command, "USER")) {
 		/* TODO */
-	} else if (!strcmp(command, "PING")) {
+	} else if (c && !strcmp(command, "PING")) {
 		sess__add_irc_out(s, buff__sprintf(":%s PONG %s :%s\r\n", selfident, selfident, c));
-	} else if (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
+	} else if (c && !strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
 		IFFREE(s->rc.token);
 		if (*c == ':') c++;
 		s->rc.token = strdup(c);
 		sess__rc_start(s, ctx);
-	} else if (!strcmp(command, "PRIVMSG")) {
+	} else if (c && !strcmp(command, "PRIVMSG")) {
 		char *msg = strchr(c, ' ');
 		char t;
 		logg(DBG3, "PRIVMSG->msg = %p,c = %s\n", msg, c);
@@ -1490,7 +1490,7 @@ skip_parsing:
 		}
 	} else if (!strcmp(command, "WHO")) {
 		/* TODO */
-	} else if (!strcmp(command, "JOIN")) {
+	} else if (c && !strcmp(command, "JOIN")) {
 		sess__rc_join_room(s, 'c', c);
 	} else if (!strcmp(command, "AWAY")) {
 		sess__rc_set_away(s, c);
