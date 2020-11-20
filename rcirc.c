@@ -202,6 +202,9 @@ t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, c
 int sess__rc_queue_process(t_sess * s);
 int sess__rc_send_message(t_sess * s, char t, const char *name,
 			  const char *msg);
+int sess__rc_set_away(t_sess * s, const char *msg);
+int sess__rc_set_back(t_sess * s);
+
 
 int sess__cb_rc_getusers(t_sess * s, void *data, json_object * j);
 int sess__cb_rc_joinroom(t_sess * s, void *data, json_object * j);
@@ -210,6 +213,8 @@ int sess__cb_rc_sendmessage(t_sess * s, void *data, json_object * j);
 int sess__cb_rc_getsubscriptions(t_sess * s, void *data, json_object * j);
 int sess__cb_rc_login(t_sess * s, void *data, json_object * j);
 int sess__cb_rc_createdirect(t_sess * s, void *data, json_object * j);
+int sess__cb_rc_set_away(t_sess * s, void *data, json_object * j);
+int sess__cb_rc_set_back(t_sess * s, void *data, json_object * j);
 
 int sess__close(t_sess * s);
 int irc__process(t_sess * s, struct lws_context *ctx);
@@ -1286,6 +1291,52 @@ int sess__rc_send_message(t_sess * s, char t, const char *name, const char *msg)
 	return 0;
 }
 
+int sess__rc_set_away(t_sess * s, const char *msg)
+{
+
+	if (!msg) {
+		logg(DBG3, "Setting back\n");
+		sess__rc_set_back(s);
+	}
+	else {
+		logg(DBG3, "Setting away\n");
+		sess__rc_command_call_(s, NULL,
+				json_create(NULL,
+					"{msg:%s method:%s params:[%s]}",
+					"method",
+					"setUserStatus", "away"),
+				sess__cb_rc_set_away);
+	}
+	return 0;
+}
+
+int sess__rc_set_back(t_sess * s)
+{
+	sess__rc_command_call_(s, NULL,
+			json_create(NULL,
+				"{msg:%s method:%s params:[%s]}",
+				"method",
+				"setUserStatus", "online"),
+			sess__cb_rc_set_back);
+	return 0;
+}
+
+int sess__cb_rc_set_away(t_sess * s, void *data, json_object * j)
+{
+	char buff[512];
+
+	sess__add_irc_out(s, buff__sprintf(":%s 306 :You have been marked as being away\r\n",
+				selfident, buff));
+}
+
+int sess__cb_rc_set_back(t_sess * s, void *data, json_object * j)
+{
+	char buff[512];
+
+	sess__add_irc_out(s, buff__sprintf(":%s 305 :You are no longer marked as being away\r\n",
+				selfident, buff));
+}
+
 int sess__free(t_sess * s)
 {
 	t_sess **d;
@@ -1441,6 +1492,8 @@ skip_parsing:
 		/* TODO */
 	} else if (!strcmp(command, "JOIN")) {
 		sess__rc_join_room(s, 'c', c);
+	} else if (!strcmp(command, "AWAY")) {
+		sess__rc_set_away(s, c);
 	} else if (!strcmp(command, "QUERY")) {
 		sess__rc_join_room(s, 'd', c);
 	} else if (!strcmp(command, "QUIT")) {
