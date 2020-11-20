@@ -1327,6 +1327,7 @@ int sess__cb_rc_set_away(t_sess * s, void *data, json_object * j)
 
 	sess__add_irc_out(s, buff__sprintf(":%s 306 :You have been marked as being away\r\n",
 				selfident, buff));
+	return 0;
 }
 
 int sess__cb_rc_set_back(t_sess * s, void *data, json_object * j)
@@ -1335,6 +1336,7 @@ int sess__cb_rc_set_back(t_sess * s, void *data, json_object * j)
 
 	sess__add_irc_out(s, buff__sprintf(":%s 305 :You are no longer marked as being away\r\n",
 				selfident, buff));
+	return 0;
 }
 
 int sess__free(t_sess * s)
