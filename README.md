@@ -12,7 +12,7 @@ json-c libwebsockets
 
 ## Running
 
-    ./rcirc -p <irc_port> <servername>
+    ./rcirc -l <irc_port> <servername>
 
 Then connect with IRC client, for example:
 
