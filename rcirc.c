@@ -830,7 +830,7 @@ int sess__cb_rc_createdirect(t_sess * s, void *data, json_object * j)
 	if (json_read
 	    (NULL, j, "{result:{t:%s rid:%s usernames:%o}}", &t, &rid,
 	     &usernames) == 3) {
-		const char *name;
+		const char *name = NULL;
 
 		for (int i = 0; i < json_object_array_length(usernames); i++) {
 			json_object *un = json_object_array_get_idx(usernames, i);
