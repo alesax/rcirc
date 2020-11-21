@@ -6,8 +6,11 @@ Tunnel that exposes RocketChat as an IRC server.
 
 - json-c
 - libwebsockets
+- libuv
+- openssl/libressl
 
-OpenSUSE: `zypper install libjson-c-devel 'libwebsockets-devel>4' libopenssl-devel`
+OpenSUSE: `zypper install libjson-c-devel 'libwebsockets-devel>4'
+libopenssl-devel libuv-devel`
 
 ## Building
 
