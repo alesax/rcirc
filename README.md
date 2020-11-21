@@ -8,7 +8,7 @@ json-c libwebsockets
 
 ## Building
 
-make
+    make
 
 ## Running
 
