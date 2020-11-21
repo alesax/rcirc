@@ -1509,7 +1509,7 @@ skip_parsing:
 	memcpy(s->irc_buff, end + 1,
 	       s->irc_buff + s->irc_buff_head - (end + 1));
 	s->irc_buff_head -= (end - s->irc_buff + 1);
-					if (s->irc_buff_head > 513) { logg(ERR, "s->irc_buff_head = %d\n", s->irc_buff_head); *(int*)0 = -1; }
+					if (s->irc_buff_head > 513) { logg(ERR, "s->irc_buff_head = %d\n", s->irc_buff_head); __builtin_trap(); }
 
 	return 0;
 }
