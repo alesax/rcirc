@@ -176,8 +176,6 @@ int sess__irc_send_message(t_sess * s, char t, const char *srcname,
 void sess__add_sent_message(t_sess * s, const char *id);
 int sess__find_sent_message(t_sess * s, const char *id);
 
-int sess__rc_join_room(t_sess * s, char t, const char *name);
-t_rc_room *sess__rc_room_by_rid(t_sess * s, const char *rid);
 int sess__rc_send_message(t_sess * s, char t, const char *name,
 			  const char *msg);
 void gen_id(t_rc_id id);
@@ -200,8 +198,6 @@ void rc_message__free(t_rc_message * m);
 t_rc_message *sess__rc_find_message(t_sess *s, const char *id);
 t_rc_message *sess__rc_add_message(t_sess *s, const char *id, const char *msg, const char *sender, const char *reactions);
 int sess__rc_queue_process(t_sess * s);
-int sess__rc_send_message(t_sess * s, char t, const char *name,
-			  const char *msg);
 int sess__rc_set_away(t_sess * s, const char *msg);
 int sess__rc_set_back(t_sess * s);
 
