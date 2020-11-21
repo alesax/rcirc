@@ -830,7 +830,7 @@ int sess__cb_rc_createdirect(t_sess * s, void *data, json_object * j)
 	if (json_read
 	    (NULL, j, "{result:{t:%s rid:%s usernames:%o}}", &t, &rid,
 	     &usernames) == 3) {
-		const char *name;
+		const char *name = NULL;
 
 		for (int i = 0; i < json_object_array_length(usernames); i++) {
 			json_object *un = json_object_array_get_idx(usernames, i);
@@ -1467,7 +1467,7 @@ skip_parsing:
 		/* TODO */
 	} else if (c && !strcmp(command, "PING")) {
 		sess__add_irc_out(s, buff__sprintf(":%s PONG %s :%s\r\n", selfident, selfident, c));
-	} else if (c && !strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
+	} else if (c && (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY"))) {
 		IFFREE(s->rc.token);
 		if (*c == ':') c++;
 		s->rc.token = strdup(c);
@@ -1509,7 +1509,6 @@ skip_parsing:
 	memcpy(s->irc_buff, end + 1,
 	       s->irc_buff + s->irc_buff_head - (end + 1));
 	s->irc_buff_head -= (end - s->irc_buff + 1);
-					if (s->irc_buff_head > 513) { logg(ERR, "s->irc_buff_head = %d\n", s->irc_buff_head); *(int*)0 = -1; }
 
 	return 0;
 }

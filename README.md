@@ -4,15 +4,18 @@ Tunnel that exposes RocketChat as an IRC server.
 
 ## Requirements
 
-json-c libwebsockets
+- json-c
+- libwebsockets
+
+OpenSUSE: `zypper install libjson-c-devel 'libwebsockets-devel>4' libopenssl-devel`
 
 ## Building
 
-make
+    make
 
 ## Running
 
-    ./rcirc -p <irc_port> <servername>
+    ./rcirc -l <irc_port> <servername>
 
 Then connect with IRC client, for example:
 
