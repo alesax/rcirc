@@ -1467,7 +1467,7 @@ skip_parsing:
 		/* TODO */
 	} else if (c && !strcmp(command, "PING")) {
 		sess__add_irc_out(s, buff__sprintf(":%s PONG %s :%s\r\n", selfident, selfident, c));
-	} else if (c && !strcmp(command, "PASS") || !strcmp(command, "IDENTIFY")) {
+	} else if (c && (!strcmp(command, "PASS") || !strcmp(command, "IDENTIFY"))) {
 		IFFREE(s->rc.token);
 		if (*c == ':') c++;
 		s->rc.token = strdup(c);
