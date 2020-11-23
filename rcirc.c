@@ -1457,6 +1457,8 @@ skip_parsing:
 
 			IFFREE(s->irc.nick);
 			s->irc.nick = strdup(c);
+			if (s->rc.token && !s->rc_poll)
+				sess__rc_start(s, ctx);
 		}
 
 	} else if (!strcmp(command, "USER")) {
@@ -1467,7 +1469,8 @@ skip_parsing:
 		IFFREE(s->rc.token);
 		if (*c == ':') c++;
 		s->rc.token = strdup(c);
-		sess__rc_start(s, ctx);
+		if (s->irc.nick)
+			sess__rc_start(s, ctx);
 	} else if (c && !strcmp(command, "PRIVMSG")) {
 		char *msg = strchr(c, ' ');
 		char t;
@@ -1496,9 +1499,10 @@ skip_parsing:
 		sess__rc_join_room(s, 'd', c);
 	} else if (!strcmp(command, "QUIT")) {
 		shutdown(s->poll->fd, SHUT_RDWR);
-		shutdown(s->rc_poll->fd, SHUT_RDWR);
+		if (s->rc_poll)
+			shutdown(s->rc_poll->fd, SHUT_RDWR);
 	} else {
-		logg(ERR, "Unrecognized command %s\n", command);
+		logg(ERR, "Unrecognized command %s %s\n", command, c ? c : "");
 	}
 
  error_parsing:
