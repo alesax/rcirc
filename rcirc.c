@@ -1256,11 +1256,13 @@ int sess__rc_queue_process(t_sess * s)
 {
 	t_rc_message *msg, **m;
 
-	for (m = &s->rc.messages; (msg = *m); m = &(*m)->next) {
+	for (m = &s->rc.messages; (msg = *m); ) {
 		if (!sess__rc_send_message(s, msg->t, msg->dstname, msg->msg)) {
-			*m = (*m)->next;
+			*m = msg->next;
 
 			rc_message__free(msg);
+		} else {
+			m = &msg->next;
 		}
 	}
 	return 0;
