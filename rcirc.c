@@ -266,7 +266,7 @@ int sess__rc_work(t_sess * s, const char *in)
 
 	}
 
-	if ((jo = json_object_object_get(jobj, "msg"))) {
+	if (json_object_object_get_ex(jobj, "msg", &jo)) {
 		const char *msg = json_object_get_string(jo);
 		if (!strcmp(msg, "ping")) {
 			msg = NULL;
@@ -275,11 +275,9 @@ int sess__rc_work(t_sess * s, const char *in)
 			goto finished;
 		}
 		msg = NULL;
-	}
+	} else jo = NULL;
 
-	jo = json_object_object_get(jobj, "id");
-
-	if (jo) {
+	if (json_object_object_get_ex(jobj, "id", &jo)) {
 		const char *id = json_object_get_string(jo);
 		t_rc_command *cb = sess__rc_command_by_id(s, id);
 		if (cb) {
@@ -292,7 +290,7 @@ int sess__rc_work(t_sess * s, const char *in)
 
 			goto finished;
 		}
-	}
+	} else jo = NULL;
 
 	if (json_read
 	    (NULL, jobj, "{msg=%s collection=%s id:%s fields:{username:%s}}",
@@ -1092,12 +1090,11 @@ int sess__cb_rc_getusers(t_sess * s, void *data, json_object * j)
 	for (int i = 0; i < cnt_args; i++) {
 		json_object *n, *p = json_object_array_get_idx(records, i);
 
-		n = json_object_object_get(p, "username");
-		if (n) {
+		if (json_object_object_get_ex(p, "username", &n)) {
 			const char *st = json_object_get_string(n);
 			b = stpncpy(b, st, buff + sizeof(buff) - b);
 			b = stpncpy(b, " ", buff + sizeof(buff) - b);
-		}
+		} else n = NULL;
 	}
 	*b = 0;
 	sess__add_irc_out(s, buff__sprintf(":%s 353 %s = #%s :%s\r\n",
