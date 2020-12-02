@@ -838,11 +838,7 @@ int sess__cb_rc_createdirect(t_sess * s, void *data, json_object * j)
 		if (!name)
 			goto end;
 
-		t_rc_room *room =
-		    sess__rc_room_add(s, t[0], name, rid, NULL, NULL);
-
-		room->next = s->rc.rooms;
-		s->rc.rooms = room;
+		sess__rc_room_add(s, t[0], name, rid, NULL, NULL);
 	} else {
 
 		if (json_read(NULL, j, "{error:{message:%s}}", &msg) == 1) {
