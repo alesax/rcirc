@@ -551,10 +551,6 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 				  buff__sprintf("RocketChat connection error\r\n"));
 
 		s->state |= STATE_SHUTTING_DOWN;
-		if (s->rc.vhost && s->rc.protocol)
-			lws_timed_callback_vh_protocol(s->rc.vhost,
-						       s->rc.protocol,
-						       LWS_CALLBACK_USER, 1);
 		break;
 
 	case LWS_CALLBACK_CLIENT_ESTABLISHED:
@@ -600,8 +596,6 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 				  buff__sprintf("RocketChat closing socket\r\n"));
 
 		s->state |= STATE_SHUTTING_DOWN;
-		lws_timed_callback_vh_protocol(s->rc.vhost, s->rc.protocol,
-					       LWS_CALLBACK_USER, 1);
 		break;
 
 	case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
@@ -611,9 +605,6 @@ callback_minimal_broker_2(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_USER:
 		logg(DBG4, "%s: LWS_CALLBACK_USER\n", __func__);
-		lws_timed_callback_vh_protocol(s->rc.vhost,
-					       s->rc.protocol,
-					       LWS_CALLBACK_USER, 1);
 		break;
 
 	case LWS_CALLBACK_CLIENT_RECEIVE:
