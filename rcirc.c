@@ -242,6 +242,73 @@ int sess__add_rc_out_(t_sess * s, const char *c)
 	return (r);
 }
 
+void sess__rc_process_message(t_sess *s, char *_id, char *username, char *msg, char *roomName, char *mt, char *t, t_rc_room *room, struct json_object *reactions, struct json_object *attachments)
+{
+	/*
+	 * was this message sent by us? */
+	if (sess__find_sent_message(s, _id))
+		return;
+
+	char *s_reactions = reactions2string(reactions);
+
+	char *_pfx = NULL;
+	char *_msg = msg;
+
+	/*
+	 * have we already seen this message? */
+	t_rc_message *m = sess__rc_find_message(s, _id);
+
+	if (m) {
+		logg(DBG4, "Repeated message %s\n", _id);
+
+		if(s_reactions && (!m->reactions || strcmp(m->reactions, s_reactions))) {
+			char *tmp = m->reactions;
+			m->reactions = s_reactions;
+			free(tmp);
+			_pfx = m->reactions;
+		}
+
+		if(strcmp(m->msg, msg)) {
+			char *tmp = m->msg;
+			m->msg = STRDUP(msg);
+			free(tmp);
+			_pfx = MSG_edited;
+
+			if (mt && !strcmp(mt, "rm")) {
+				_pfx = MSG_removed;
+				_msg = msg;
+			}
+		}
+
+		if (!_pfx)
+			return;
+	} else {
+		sess__rc_add_message(s, _id, msg, username, s_reactions);
+	}
+
+	char *_dest = roomName;
+	char _t = 'd';
+
+	if (t && (*t == 'c' || *t == 'p')
+			&& roomName) {
+		_t = 'c';
+	} else if (room
+			&& !strcmp(username,
+				s->irc.nick)) {
+		_dest = room->name;
+	} else {
+		_dest = s->irc.nick;
+	}
+
+	sess__irc_send_message(s, _t,
+			username,
+			_dest,
+			_pfx,
+			_msg);
+}
+
+
+
 t_rc_command *sess__rc_command_by_id(t_sess * s, const t_rc_id id)
 {
 	t_rc_command *cmd;
@@ -384,103 +451,63 @@ int sess__rc_work(t_sess * s, const char *in)
 						if (r)
 							dst = r->name;
 					}
-					if (sess__find_sent_message(s, _id))
-						goto finished2;
+					if (sess__find_sent_message(s, _id)) {
+						IFFREE(msg);
+						IFFREE(rid);
+						IFFREE(username);
+						IFFREE(t);
+						continue;
+
+					}
+						
 					sess__irc_send_message(s, 'd', username,
 							       dst, NULL, msg);
 
-				} else
-				    if ((r =
-					 json_read(NULL, p,
-						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
-						   &msg, &rid, &_id,
-						   &username, &attachments, &reactions, &tmid, &mt)) >= 4 
-						   && msg && rid && _id && username) {
-
-					t_rc_room *room =
-					    sess__rc_room_by_rid(s, rid);
+				} else {
 
 					if ((i + 1) < cnt_args) {
 						i += 1;
-						json_object *p =
+						json_object *op =
 						    json_object_array_get_idx
 						    (args, i);
 
-						r = json_read(NULL, p,
+						r = json_read(NULL, op,
 							      "{roomType:%s roomName?%s roomParticipant?%b}",
 							      &t, &roomName,
 							      &roomParticipant);
 
 					}
 
-					/*
-					 * was this message sent by us? */
-					if (sess__find_sent_message(s, _id))
-						goto finished2;
 
-					char *s_reactions = reactions2string(reactions);
+					int cnt_msgs = json_object_array_length(p);
+					for (int ii = 0; ii < cnt_msgs; ii++) {
+						json_object *p2 = json_object_array_get_idx(p, ii);
 
-					char *_pfx = NULL;
-					char *_msg = msg;
+						if ((r = json_read(NULL, p2,
+						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
+						   &msg, &rid, &_id,
+						   &username, &attachments, &reactions, &tmid, &mt)) >= 4 
+						   && msg && rid && _id && username) {
 
-					/*
-					 * have we already seen this message? */
-					t_rc_message *m = sess__rc_find_message(s, _id);
+							t_rc_room *room = sess__rc_room_by_rid(s, rid);
 
-					if (m) {
-						logg(DBG4, "Repeated message %s\n", _id);
+							sess__rc_process_message(s, _id, username, msg, roomName, mt,
+								t, room, reactions, attachments);
 
-						if(s_reactions && (!m->reactions || strcmp(m->reactions, s_reactions))) {
-							SWAPC(m->reactions, s_reactions);
-							_pfx = m->reactions;
 						}
 
-						if(strcmp(m->msg, msg)) {
-							SWAPC(m->msg, msg);
-							_pfx = MSG_edited;
+						IFFREE(msg);
+						IFFREE(rid);
+						IFFREE(username);
+						IFFREE(mt);
+						IFFREE(tmid);
 
-							if (mt && !strcmp(mt, "rm")) {
-								_pfx = MSG_removed;
-								_msg = msg;
-							}
-						}
-
-						if (!_pfx)
-							goto finished2;
-					} else {
-						sess__rc_add_message(s, _id, msg, username, s_reactions);
 					}
 
-					char *_dest = roomName;
-					char _t = 'd';
-
-					if (t && (*t == 'c' || *t == 'p')
-					    && roomName) {
-						_t = 'c';
-					} else if (room
-						 && !strcmp(username,
-							    s->irc.nick)) {
-					       _dest = room->name;
-					} else {
-						_dest = s->irc.nick;
-					}
-
-					sess__irc_send_message(s, _t,
-							       username,
-							       _dest,
-							       _pfx,
-							       _msg);
+					IFFREE(t);
+					IFFREE(roomName);
 
 				}
-finished2:
-
-				IFFREE(msg);
-				IFFREE(rid);
-				IFFREE(username);
-				IFFREE(roomName);
-				IFFREE(t);
-				IFFREE(mt);
-				IFFREE(tmid);
 			}
 		}
 
@@ -607,7 +634,7 @@ static const struct lws_protocols protocols[] = {
 	 "lws-minimal-broker",
 	 callback_minimal_broker_2,
 	 0,
-	 65535,
+	 65535*2,
 	 0,
 	 NULL,
 	 },
