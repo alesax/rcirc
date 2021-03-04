@@ -479,20 +479,42 @@ int sess__rc_work(t_sess * s, const char *in)
 					}
 
 
-					int cnt_msgs = json_object_array_length(p);
-					for (int ii = 0; ii < cnt_msgs; ii++) {
-						json_object *p2 = json_object_array_get_idx(p, ii);
+					if (json_object_is_type(p, json_type_array)) {
+						int cnt_msgs = json_object_array_length(p);
+						for (int ii = 0; ii < cnt_msgs; ii++) {
+							json_object *p2 = json_object_array_get_idx(p, ii);
 
-						if ((r = json_read(NULL, p2,
-						   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
-						   &msg, &rid, &_id,
-						   &username, &attachments, &reactions, &tmid, &mt)) >= 4 
-						   && msg && rid && _id && username) {
+							if ((r = json_read(NULL, p2,
+							   "{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
+							   &msg, &rid, &_id,
+							   &username, &attachments, &reactions, &tmid, &mt)) >= 4 
+							   && msg && rid && _id && username) {
+
+								t_rc_room *room = sess__rc_room_by_rid(s, rid);
+
+								sess__rc_process_message(s, _id, username, msg, roomName, mt,
+									t, room, reactions, attachments);
+
+							}
+
+							IFFREE(msg);
+							IFFREE(rid);
+							IFFREE(username);
+							IFFREE(mt);
+							IFFREE(tmid);
+
+						}
+					} else {
+						if ((r = json_read(NULL, p,
+								"{msg:%s rid:%s _id:%s u:{username:%s} attachments?%o reactions?%o tmid?%s t?%s}",
+										&msg, &rid, &_id,
+										&username, &attachments, &reactions, &tmid, &mt)) >= 4 
+								&& msg && rid && _id && username) {
 
 							t_rc_room *room = sess__rc_room_by_rid(s, rid);
 
 							sess__rc_process_message(s, _id, username, msg, roomName, mt,
-								t, room, reactions, attachments);
+									t, room, reactions, attachments);
 
 						}
 
@@ -503,6 +525,7 @@ int sess__rc_work(t_sess * s, const char *in)
 						IFFREE(tmid);
 
 					}
+
 
 					IFFREE(t);
 					IFFREE(roomName);
