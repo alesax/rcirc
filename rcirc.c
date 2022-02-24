@@ -1633,7 +1633,7 @@ int main(int argc, char **argv)
 		if (ret > 0 && pollfds[0].revents == POLLIN) {
 			/* new connection on the IRC port */
 			struct sockaddr_in cl_addr;
-			socklen_t cl_len;
+			socklen_t cl_len = sizeof(cl_addr);
 
 			int newfd =
 			    accept(pollfds[0].fd,
